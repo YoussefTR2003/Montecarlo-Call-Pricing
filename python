@@ -1,0 +1,86 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+
+# -----------------------------
+# 1) Black-Scholes (Call)
+# -----------------------------
+def bs_call_price(S, K, T, r, q, sigma):
+    """Black-Scholes price of a European call with continuous dividend yield q."""
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+
+
+# -----------------------------
+# 2) Monte Carlo (Call)
+# -----------------------------
+def mc_call_price(S, K, T, r, q, sigma, N=100_000, seed=1, return_ST=False):
+    """
+    Monte Carlo pricing of a European call under GBM (risk-neutral measure).
+    Returns: price, standard error, 95% confidence interval
+    """
+    rng = np.random.default_rng(seed)
+    Z = rng.standard_normal(N)
+
+    # Terminal stock price under risk-neutral dynamics
+    ST = S * np.exp((r - q - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)
+
+    payoff = np.maximum(ST - K, 0.0)
+    price = np.exp(-r * T) * payoff.mean()
+
+    # Standard error + 95% CI
+    stderr = np.exp(-r * T) * payoff.std(ddof=1) / np.sqrt(N)
+    ci95 = (price - 1.96 * stderr, price + 1.96 * stderr)
+
+    if return_ST:
+        return price, stderr, ci95, ST
+    return price, stderr, ci95
+
+
+# -----------------------------
+# 3) Convergence plot
+# -----------------------------
+def plot_convergence(S, K, T, r, q, sigma, bs_price, Ns, seed=1):
+    prices = []
+    for n in Ns:
+        p, _, _ = mc_call_price(S, K, T, r, q, sigma, N=int(n), seed=seed)
+        prices.append(p)
+
+    plt.plot(Ns, prices, label="Monte Carlo")
+    plt.axhline(bs_price, linestyle="--", label="Black-Scholes")
+    plt.xlabel("Number of simulations (N)")
+    plt.ylabel("Call price")
+    plt.title("Monte Carlo Convergence")
+    plt.legend()
+    plt.show()
+
+
+# -----------------------------
+# 4) Run example
+# -----------------------------
+if __name__ == "__main__":
+    # Parameters
+    S, K = 100, 110
+    T = 0.5
+    r, q = 0.05, 0.02
+    sigma = 0.25
+
+    # Prices
+    bs = bs_call_price(S, K, T, r, q, sigma)
+    mc, se, ci, ST = mc_call_price(S, K, T, r, q, sigma, N=200_000, seed=1, return_ST=True)
+
+    print(f"Black-Scholes: {bs:.4f}")
+    print(f"Monte Carlo  : {mc:.4f}  (SE={se:.4f}, 95% CI={ci[0]:.4f} ; {ci[1]:.4f})")
+
+    # Plot distribution of ST
+    plt.hist(ST, bins=60, density=True)
+    plt.title("Distribution of $S_T$")
+    plt.xlabel("$S_T$")
+    plt.ylabel("Density")
+    plt.show()
+
+    # Convergence
+    Ns = np.arange(5_000, 200_001, 10_000)
+    plot_convergence(S, K, T, r, q, sigma, bs, Ns, seed=1)
